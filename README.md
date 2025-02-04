@@ -96,4 +96,3 @@ Many thanks to these excellent open source projects:
 
 ### &#8627; Forkers
 [![Forkers repo roster for @nastyox/Repo-Roster](https://reporoster.com/forks/fundamentalvision/BEVFormer)](https://github.com/fundamentalvision/BEVFormer/network/members)
-

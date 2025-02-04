@@ -119,6 +119,5 @@ class GridMask(nn.Module):
             offset = torch.from_numpy(2 * (np.random.rand(h,w) - 0.5)).to(x.dtype).cuda()
             x = x * mask + offset * (1 - mask)
         else:
-            x = x * mask 
-        
+            x = x * mask
         return x.view(n,c,h,w)

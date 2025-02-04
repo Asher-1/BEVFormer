@@ -129,50 +129,62 @@ class SpatialCrossAttention(BaseModule):
             inp_residual = query
             slots = torch.zeros_like(query)
         if query_pos is not None:
-            query = query + query_pos
+            query = query + query_pos # (1, 2500, 256) + (1, 2500, 256) -> (1, 2500, 256)
 
-        bs, num_query, _ = query.size()
+        bs, num_query, _ = query.size() # 1, 2500, 256
 
-        D = reference_points_cam.size(3)
+        D = reference_points_cam.size(3) # (6, 1, 2500, 4, 2), D=4
         indexes = []
-        for i, mask_per_img in enumerate(bev_mask):
-            index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1)
+        for i, mask_per_img in enumerate(bev_mask): # bev_mask: (6, 1, 2500, 4)
+            # mask_per_img: (1, 2500, 4) 单相机mask
+            index_query_per_img = mask_per_img[0].sum(-1).nonzero().squeeze(-1) # (1, 2500, 4) -> (2500, 4) -> (2500, ) -> (393, 1) -> (393, )
             indexes.append(index_query_per_img)
-        max_len = max([len(each) for each in indexes])
+        max_len = max([len(each) for each in indexes]) # index最大长度
 
         # each camera only interacts with its corresponding BEV queries. This step can  greatly save GPU memory.
         queries_rebatch = query.new_zeros(
-            [bs, self.num_cams, max_len, self.embed_dims])
+            [bs, self.num_cams, max_len, self.embed_dims]) # (1, 6, max_len, 256)
         reference_points_rebatch = reference_points_cam.new_zeros(
-            [bs, self.num_cams, max_len, D, 2])
+            [bs, self.num_cams, max_len, D, 2]) # (1, 6, max_len, 4, 2)
         
-        for j in range(bs):
-            for i, reference_points_per_img in enumerate(reference_points_cam):   
-                index_query_per_img = indexes[i]
+        for j in range(bs): # per_batch
+            for i, reference_points_per_img in enumerate(reference_points_cam):  # per_cam
+                index_query_per_img = indexes[i] # (393, )
+                # queries_rebatch[j, i, :len(index_query_per_img)]: j-th batch, i-th cam, max_len
+                # query[j, index_query_per_img]: query, (1, 2500, 256), j-th batch, query_index, 从对应index采样query，放到queries_rebatch里面
                 queries_rebatch[j, i, :len(index_query_per_img)] = query[j, index_query_per_img]
+                # 从对应index采样reference_points，放到reference_points_rebatch里面
                 reference_points_rebatch[j, i, :len(index_query_per_img)] = reference_points_per_img[j, index_query_per_img]
 
-        num_cams, l, bs, embed_dims = key.shape
+        num_cams, l, bs, embed_dims = key.shape # 6, 15*25, 1, 256 
 
         key = key.permute(2, 0, 1, 3).reshape(
-            bs * self.num_cams, l, self.embed_dims)
+            bs * self.num_cams, l, self.embed_dims) # (6, 375, 1, 256) -> (1, 6, 375, 256) -> (6, 375, 256)
         value = value.permute(2, 0, 1, 3).reshape(
-            bs * self.num_cams, l, self.embed_dims)
+            bs * self.num_cams, l, self.embed_dims) # (6, 375, 1, 256) -> (1, 6, 375, 256) -> (6, 375, 256)
 
+        # query: (1, 6, max_len, 256) -> (6, max_len, 256)
+        # key: (6, 375, 256)
+        # value: (6, 375, 256)
+        # ref_p: (1, 6, max_len, 4, 2) -> (6, max_len, 4, 2)
+        # spatial_shapes: [[15, 25]]
+        # level_start_index: [0]
         queries = self.deformable_attention(query=queries_rebatch.view(bs*self.num_cams, max_len, self.embed_dims), key=key, value=value,
                                             reference_points=reference_points_rebatch.view(bs*self.num_cams, max_len, D, 2), spatial_shapes=spatial_shapes,
-                                            level_start_index=level_start_index).view(bs, self.num_cams, max_len, self.embed_dims)
-        for j in range(bs):
-            for i, index_query_per_img in enumerate(indexes):
+                                            level_start_index=level_start_index).view(bs, self.num_cams, max_len, self.embed_dims) # (1, 6, max_len, 256)
+
+        for j in range(bs): # per_batch
+            for i, index_query_per_img in enumerate(indexes): # per_img
+                # j-th batch, 对应index += queries特征
                 slots[j, index_query_per_img] += queries[j, i, :len(index_query_per_img)]
 
-        count = bev_mask.sum(-1) > 0
-        count = count.permute(1, 2, 0).sum(-1)
-        count = torch.clamp(count, min=1.0)
-        slots = slots / count[..., None]
-        slots = self.output_proj(slots)
+        count = bev_mask.sum(-1) > 0 # (6, 1, 2500, 4) -> (6, 1, 2500) 高度求和
+        count = count.permute(1, 2, 0).sum(-1) # (6, 1, 2500) -> (1, 2500, 6) -> (1, 2500) 相机维度求和
+        count = torch.clamp(count, min=1.0) # (1, 2500)
+        slots = slots / count[..., None] # 取均值，(1, 2500, 256) / (1, 2500, 1) slot: (1, 2500, 256)
+        slots = self.output_proj(slots) # 线性层, (1, 2500, 256)
 
-        return self.dropout(slots) + inp_residual
+        return self.dropout(slots) + inp_residual # (1, 2500, 256)
 
 
 @ATTENTION.register_module()

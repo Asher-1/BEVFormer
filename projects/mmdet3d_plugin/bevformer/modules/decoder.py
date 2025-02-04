@@ -87,44 +87,51 @@ class DetectionTransformerDecoder(TransformerLayerSequence):
                 return_intermediate is `False`, otherwise it has shape
                 [num_layers, num_query, bs, embed_dims].
         """
-        output = query
+        output = query # object query, (900, 1, 256)
         intermediate = []
         intermediate_reference_points = []
-        for lid, layer in enumerate(self.layers):
-
+        for lid, layer in enumerate(self.layers): # 6层 decoder
             reference_points_input = reference_points[..., :2].unsqueeze(
-                2)  # BS NUM_QUERY NUM_LEVEL 2
+                2)  # BS NUM_QUERY NUM_LEVEL 2 (1, 900, 3) -> (1, 900, 2) -> (1, 900, 1, 2) 
             output = layer(
-                output,
+                output, # (900, 1, 256)
                 *args,
-                reference_points=reference_points_input,
-                key_padding_mask=key_padding_mask,
-                **kwargs)
-            output = output.permute(1, 0, 2)
+                reference_points=reference_points_input, # (1, 900, 1, 2) 
+                key_padding_mask=key_padding_mask, # None
+                **kwargs) # (900, 1, 256) DetrTransformerDecoderLayer
+            output = output.permute(1, 0, 2) # (900, 1, 256) -> (1, 900, 256)
 
             if reg_branches is not None:
-                tmp = reg_branches[lid](output)
-
+                """
+                Sequential(
+                    (0): Linear(in_features=256, out_features=256, bias=True)
+                    (1): ReLU()
+                    (2): Linear(in_features=256, out_features=256, bias=True)
+                    (3): ReLU()
+                    (4): Linear(in_features=256, out_features=10, bias=True)
+                )
+                """
+                tmp = reg_branches[lid](output) # (1, 900, 256) -> (1, 900, 10) 偏移量
                 assert reference_points.shape[-1] == 3
-
-                new_reference_points = torch.zeros_like(reference_points)
+                # 预测的tmp是偏移量，原始点reference_points + 偏移量tmp = 新坐标
+                new_reference_points = torch.zeros_like(reference_points) # (1, 900, 3)
                 new_reference_points[..., :2] = tmp[
-                    ..., :2] + inverse_sigmoid(reference_points[..., :2])
+                    ..., :2] + inverse_sigmoid(reference_points[..., :2]) # 新坐标，前两维+偏移
                 new_reference_points[..., 2:3] = tmp[
-                    ..., 4:5] + inverse_sigmoid(reference_points[..., 2:3])
+                    ..., 4:5] + inverse_sigmoid(reference_points[..., 2:3]) # 新坐标，第三维+偏移
 
-                new_reference_points = new_reference_points.sigmoid()
+                new_reference_points = new_reference_points.sigmoid() # sigmoid处理
 
-                reference_points = new_reference_points.detach()
+                reference_points = new_reference_points.detach() # 不参与反向传播
 
-            output = output.permute(1, 0, 2)
-            if self.return_intermediate:
+            output = output.permute(1, 0, 2) # (1, 900, 256) -> (900, 1, 256)
+            if self.return_intermediate: # 如果返回中间结果，把中间结果存起来
                 intermediate.append(output)
                 intermediate_reference_points.append(reference_points)
 
         if self.return_intermediate:
             return torch.stack(intermediate), torch.stack(
-                intermediate_reference_points)
+                intermediate_reference_points) # (6, 900, 1, 256), (6, 1, 900, 3)
 
         return output, reference_points
 

@@ -157,10 +157,6 @@ def main():
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
-    # set tf32
-    if cfg.get('close_tf32', False):
-        torch.backends.cuda.matmul.allow_tf32 = False
-        torch.backends.cudnn.allow_tf32 = False
 
     cfg.model.pretrained = None
     # in case the test dataset is concatenated
