@@ -8,11 +8,19 @@ export PYTHONPATH=./
 
 Train BEVFormer with 8 GPUs 
 ```
+./tools/dist_train.sh ./projects/configs/bevformer/bevformer_small.py 8
+
+or
+
 ./tools/dist_train.sh ./projects/configs/bevformer/bevformer_base.py 8
 ```
 
 Eval BEVFormer with 8 GPUs
 ```
+./tools/dist_test.sh ./projects/configs/bevformer/bevformer_small.py ./path/to/ckpts.pth 8
+
+or
+
 ./tools/dist_test.sh ./projects/configs/bevformer/bevformer_base.py ./path/to/ckpts.pth 8
 ```
 Note: using 1 GPU to eval can obtain slightly higher performance because continuous video may be truncated with multiple GPUs. By default we report the score evaled with 8 GPUs.
