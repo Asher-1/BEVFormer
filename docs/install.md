@@ -34,6 +34,11 @@ pip install mmdet==2.14.0
 pip install mmsegmentation==0.14.1
 ```
 
+**d-1. Install requirements.**
+```shell
+pip install -r requirements.txt
+```
+
 **e. Install mmdet3d from source code.**
 ```shell
 git clone https://github.com/open-mmlab/mmdetection3d.git

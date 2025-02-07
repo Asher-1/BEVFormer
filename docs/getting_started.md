@@ -4,6 +4,8 @@
 
 # Train and Test
 
+export PYTHONPATH=./
+
 Train BEVFormer with 8 GPUs 
 ```
 ./tools/dist_train.sh ./projects/configs/bevformer/bevformer_base.py 8
